@@ -2,13 +2,14 @@ import { createClient } from '@/lib/supabase/server'
 import { db } from '@/lib/db'
 import { documents, corrections } from '@/lib/db/schema'
 import { eq, desc, count } from 'drizzle-orm'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { CreateDocumentButton } from '@/components/documents/CreateDocumentButton'
 
 export default async function DocumentsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  if (!user) redirect('/login')
 
   const [docs, correctionCounts] = await Promise.all([
     db.select({

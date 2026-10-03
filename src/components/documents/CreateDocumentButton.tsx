@@ -15,6 +15,7 @@ export function CreateDocumentButton() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'New Entry' }),
       })
+      if (!res.ok) return
       const doc = await res.json()
       router.push(`/documents/${doc.id}`)
     } finally {

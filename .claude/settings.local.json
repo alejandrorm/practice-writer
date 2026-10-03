@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__claude_ai_Claude_Docs__batch"
+      "mcp__claude_ai_Claude_Docs__batch",
+      "PowerShell(Get-Content *)"
     ]
   }
 }

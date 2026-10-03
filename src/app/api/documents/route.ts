@@ -25,9 +25,11 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
+  const title = String(body.title ?? 'New Entry').slice(0, 500)
+
   const [doc] = await db.insert(documents).values({
     userId: user.id,
-    title: body.title ?? 'New Entry',
+    title,
     content: body.content ?? '',
   }).returning()
 

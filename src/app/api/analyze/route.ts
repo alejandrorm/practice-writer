@@ -9,12 +9,13 @@ export async function POST(request: NextRequest) {
 
   const { sentence } = await request.json()
   if (!sentence?.trim()) return NextResponse.json({ error: 'No sentence provided' }, { status: 400 })
+  if (sentence.length > 2000) return NextResponse.json({ error: 'Sentence too long' }, { status: 400 })
 
   try {
     const result = await analyzeSentence(sentence)
     return NextResponse.json(result)
   } catch (err) {
     console.error('[analyze] error:', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    return NextResponse.json({ error: 'Analysis failed' }, { status: 500 })
   }
 }

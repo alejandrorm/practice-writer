@@ -18,8 +18,9 @@ export async function GET(
 
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // S1: scope corrections to this user, not just the document
   const docCorrections = await db.select().from(corrections)
-    .where(eq(corrections.documentId, id))
+    .where(and(eq(corrections.documentId, id), eq(corrections.userId, user.id)))
     .orderBy(desc(corrections.createdAt))
 
   return NextResponse.json({ ...doc, corrections: docCorrections })
@@ -37,7 +38,7 @@ export async function PUT(
   const body = await request.json()
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
-  if (body.title !== undefined) updateData.title = body.title
+  if (body.title !== undefined) updateData.title = String(body.title).slice(0, 500)
   if (body.content !== undefined) updateData.content = body.content
 
   const [doc] = await db.update(documents)

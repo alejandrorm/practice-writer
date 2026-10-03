@@ -4,16 +4,7 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { SuggestionPopover } from './SuggestionPopover'
 import { CorrectionsSidePanel } from './CorrectionsSidePanel'
 import type { AnalysisResult } from '@/lib/ai/analyze'
-
-interface CorrectionItem {
-  id: string
-  originalText: string
-  correctedText: string
-  correctionType: string
-  explanation: string | null
-  wasAccepted: boolean | null
-  createdAt: string
-}
+import type { CorrectionItem } from '@/lib/types'
 
 interface PendingSentence {
   text: string
@@ -36,15 +27,21 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
 
   const lastAnalyzedEnd = useRef(initialContent.length)
   const pendingAnalysis = useRef<PendingSentence | null>(null)
+  const isSubmitting = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const saveDocument = useCallback(async (newContent: string) => {
-    await fetch(`/api/documents/${documentId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: newContent }),
-    })
+    try {
+      const res = await fetch(`/api/documents/${documentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newContent }),
+      })
+      if (!res.ok) console.error('[save] failed:', res.status)
+    } catch (err) {
+      console.error('[save] network error:', err)
+    }
   }, [documentId])
 
   const runAnalysis = useCallback(async () => {
@@ -61,6 +58,7 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sentence: pending.text }),
       })
+      if (!res.ok) return
       const result: AnalysisResult = await res.json()
       if (result.has_issues) {
         setSuggestion(result)
@@ -80,15 +78,12 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current)
     saveDebounceRef.current = setTimeout(() => saveDocument(newContent), 2000)
 
-    // Look for a complete sentence in newly written text
     const unanalyzed = newContent.slice(lastAnalyzedEnd.current)
-    // Match the first complete sentence (text ending with . ! ? followed by space or end)
     const match = /^(.*?[.!?])(\s|$)/.exec(unanalyzed)
     if (!match) return
 
     const sentenceText = match[1].trim()
     const sentenceEnd = lastAnalyzedEnd.current + match[1].length
-
     if (!sentenceText) return
 
     pendingAnalysis.current = { text: sentenceText, start: lastAnalyzedEnd.current, end: sentenceEnd }
@@ -98,7 +93,8 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
   }, [saveDocument, runAnalysis])
 
   const handleAccept = useCallback(async () => {
-    if (!suggestion || !pendingSentence) return
+    if (!suggestion || !pendingSentence || isSubmitting.current) return
+    isSubmitting.current = true
 
     const newContent = content.slice(0, pendingSentence.start) +
       suggestion.suggestion +
@@ -106,62 +102,65 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
 
     setContent(newContent)
     lastAnalyzedEnd.current = pendingSentence.start + suggestion.suggestion.length
-
     setSuggestion(null)
     setPendingSentence(null)
 
-    const res = await fetch('/api/corrections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        documentId,
-        originalText: suggestion.original,
-        correctedText: suggestion.suggestion,
-        correctionType: suggestion.type,
-        explanation: suggestion.explanation,
-        positionStart: pendingSentence.start,
-        positionEnd: pendingSentence.end,
-        wasAccepted: true,
-      }),
-    })
-    const correction = await res.json()
-    setCorrections(prev => [correction, ...prev])
-    saveDocument(newContent)
+    try {
+      const res = await fetch('/api/corrections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId,
+          originalText: suggestion.original,
+          correctedText: suggestion.suggestion,
+          correctionType: suggestion.type,
+          explanation: suggestion.explanation,
+          positionStart: pendingSentence.start,
+          positionEnd: pendingSentence.end,
+          wasAccepted: true,
+        }),
+      })
+      if (res.ok) {
+        const correction = await res.json()
+        setCorrections(prev => [correction, ...prev])
+      }
+      saveDocument(newContent)
+    } finally {
+      isSubmitting.current = false
+    }
   }, [suggestion, pendingSentence, content, documentId, saveDocument])
 
   const handleDismiss = useCallback(async () => {
-    if (!suggestion || !pendingSentence) return
+    if (!suggestion || !pendingSentence || isSubmitting.current) return
+    isSubmitting.current = true
 
     setSuggestion(null)
     setPendingSentence(null)
 
-    await fetch('/api/corrections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        documentId,
-        originalText: suggestion.original,
-        correctedText: suggestion.suggestion,
-        correctionType: suggestion.type,
-        explanation: suggestion.explanation,
-        positionStart: pendingSentence.start,
-        positionEnd: pendingSentence.end,
-        wasAccepted: false,
-      }),
-    })
-    const correction = {
-      id: crypto.randomUUID(),
-      originalText: suggestion.original,
-      correctedText: suggestion.suggestion,
-      correctionType: suggestion.type,
-      explanation: suggestion.explanation,
-      wasAccepted: false,
-      createdAt: new Date().toISOString(),
+    try {
+      const res = await fetch('/api/corrections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId,
+          originalText: suggestion.original,
+          correctedText: suggestion.suggestion,
+          correctionType: suggestion.type,
+          explanation: suggestion.explanation,
+          positionStart: pendingSentence.start,
+          positionEnd: pendingSentence.end,
+          wasAccepted: false,
+        }),
+      })
+      if (res.ok) {
+        const correction = await res.json()
+        setCorrections(prev => [correction, ...prev])
+      }
+    } finally {
+      isSubmitting.current = false
     }
-    setCorrections(prev => [correction, ...prev])
   }, [suggestion, pendingSentence, documentId])
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (!suggestion) return

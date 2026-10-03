@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { db } from '@/lib/db'
-import { corrections } from '@/lib/db/schema'
+import { corrections, documents } from '@/lib/db/schema'
 import { eq, and, desc, SQL } from 'drizzle-orm'
 
 export async function GET(request: NextRequest) {
@@ -33,12 +33,23 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
+  const { documentId, originalText, correctedText, correctionType } = body
+  if (!documentId || !originalText || !correctedText || !correctionType) {
+    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  // Verify the document belongs to this user (S2: prevent IDOR)
+  const [doc] = await db.select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.userId, user.id)))
+  if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
   const [correction] = await db.insert(corrections).values({
-    documentId: body.documentId,
+    documentId,
     userId: user.id,
-    originalText: body.originalText,
-    correctedText: body.correctedText,
-    correctionType: body.correctionType,
+    originalText,
+    correctedText,
+    correctionType,
     explanation: body.explanation ?? null,
     positionStart: body.positionStart ?? null,
     positionEnd: body.positionEnd ?? null,

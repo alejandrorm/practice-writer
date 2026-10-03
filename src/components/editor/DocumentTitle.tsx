@@ -13,6 +13,7 @@ export function DocumentTitle({ documentId, initialTitle }: DocumentTitleProps) 
   const handleBlur = useCallback(async () => {
     const trimmed = title.trim()
     if (!trimmed) { setTitle(initialTitle); return }
+    if (trimmed === initialTitle) return
     await fetch(`/api/documents/${documentId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

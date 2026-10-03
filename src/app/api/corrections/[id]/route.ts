@@ -15,8 +15,13 @@ export async function PUT(
   const { id } = await params
   const body = await request.json()
 
+  const { wasAccepted } = body
+  if (wasAccepted !== true && wasAccepted !== false && wasAccepted !== null) {
+    return NextResponse.json({ error: 'Invalid wasAccepted value' }, { status: 400 })
+  }
+
   const [correction] = await db.update(corrections)
-    .set({ wasAccepted: body.wasAccepted })
+    .set({ wasAccepted })
     .where(and(eq(corrections.id, id), eq(corrections.userId, user.id)))
     .returning()
 

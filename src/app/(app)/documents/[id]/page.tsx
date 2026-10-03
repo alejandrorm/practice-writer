@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { db } from '@/lib/db'
 import { documents, corrections } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { WritingEditor } from '@/components/editor/WritingEditor'
 import { DocumentTitle } from '@/components/editor/DocumentTitle'
 
@@ -10,7 +10,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  if (!user) redirect('/login')
 
   const [doc] = await db.select().from(documents)
     .where(and(eq(documents.id, id), eq(documents.userId, user.id)))
@@ -18,7 +18,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   if (!doc) notFound()
 
   const docCorrections = await db.select().from(corrections)
-    .where(eq(corrections.documentId, id))
+    .where(and(eq(corrections.documentId, id), eq(corrections.userId, user.id)))
     .orderBy(desc(corrections.createdAt))
 
   return (
