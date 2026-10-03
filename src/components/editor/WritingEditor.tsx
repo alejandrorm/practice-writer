@@ -83,10 +83,12 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
     if (!match) return
 
     const sentenceText = match[1].trim()
-    const sentenceEnd = lastAnalyzedEnd.current + match[1].length
     if (!sentenceText) return
+    const leadingSpace = match[1].length - match[1].trimStart().length
+    const sentenceStart = lastAnalyzedEnd.current + leadingSpace
+    const sentenceEnd = lastAnalyzedEnd.current + match[1].length
 
-    pendingAnalysis.current = { text: sentenceText, start: lastAnalyzedEnd.current, end: sentenceEnd }
+    pendingAnalysis.current = { text: sentenceText, start: sentenceStart, end: sentenceEnd }
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(runAnalysis, 800)
