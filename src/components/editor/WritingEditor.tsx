@@ -18,6 +18,33 @@ interface WritingEditorProps {
   initialCorrections: CorrectionItem[]
 }
 
+function getSentenceAtCursor(text: string, cursorPos: number): PendingSentence | null {
+  if (!text) return null
+
+  // Find sentence end: cursor may be right after punctuation or before it
+  let end: number
+  if (cursorPos > 0 && /[.!?]/.test(text[cursorPos - 1])) {
+    end = cursorPos
+  } else {
+    end = cursorPos
+    while (end < text.length && !/[.!?\n]/.test(text[end])) end++
+    // Hit end of text or a line break first: sentence not yet complete
+    if (end >= text.length || text[end] === '\n') return null
+    end++  // include the punctuation
+  }
+
+  // Find sentence start: scan backwards from just before the period (line breaks also end a sentence)
+  let start = end - 1
+  while (start > 0 && !/[.!?\n]/.test(text[start - 1])) start--
+  // Skip leading whitespace
+  while (start < end && /\s/.test(text[start])) start++
+
+  const sentenceText = text.slice(start, end).trim()
+  if (!sentenceText || sentenceText.length < 2) return null
+
+  return { text: sentenceText, start, end }
+}
+
 export function WritingEditor({ documentId, initialContent, initialCorrections }: WritingEditorProps) {
   const [content, setContent] = useState(initialContent)
   const [corrections, setCorrections] = useState<CorrectionItem[]>(initialCorrections)
@@ -25,7 +52,6 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
   const [pendingSentence, setPendingSentence] = useState<PendingSentence | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
 
-  const lastAnalyzedEnd = useRef(initialContent.length)
   const pendingAnalysis = useRef<PendingSentence | null>(null)
   const isSubmitting = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -47,8 +73,6 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
   const runAnalysis = useCallback(async () => {
     const pending = pendingAnalysis.current
     if (!pending) return
-
-    lastAnalyzedEnd.current = pending.end
     pendingAnalysis.current = null
 
     setIsAnalyzing(true)
@@ -71,28 +95,34 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
     }
   }, [])
 
+  const scheduleSentenceAnalysis = useCallback((sentence: PendingSentence) => {
+    pendingAnalysis.current = sentence
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(runAnalysis, 800)
+  }, [runAnalysis])
+
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value
+    const cursorPos = e.target.selectionStart ?? newContent.length
     setContent(newContent)
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current)
     saveDebounceRef.current = setTimeout(() => saveDocument(newContent), 2000)
 
-    const unanalyzed = newContent.slice(lastAnalyzedEnd.current)
-    const match = /^(.*?[.!?])(\s|$)/.exec(unanalyzed)
-    if (!match) return
+    const sentence = getSentenceAtCursor(newContent, cursorPos)
+    if (sentence) scheduleSentenceAnalysis(sentence)
+  }, [saveDocument, scheduleSentenceAnalysis])
 
-    const sentenceText = match[1].trim()
-    if (!sentenceText) return
-    const leadingSpace = match[1].length - match[1].trimStart().length
-    const sentenceStart = lastAnalyzedEnd.current + leadingSpace
-    const sentenceEnd = lastAnalyzedEnd.current + match[1].length
+  // Trigger analysis on text selection (mouseup with non-empty selection)
+  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const { selectionStart, selectionEnd } = e.currentTarget
+    if (selectionStart === selectionEnd) return
 
-    pendingAnalysis.current = { text: sentenceText, start: sentenceStart, end: sentenceEnd }
+    const selectedText = content.slice(selectionStart, selectionEnd).trim()
+    if (selectedText.length < 3) return
 
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(runAnalysis, 800)
-  }, [saveDocument, runAnalysis])
+    scheduleSentenceAnalysis({ text: selectedText, start: selectionStart, end: selectionEnd })
+  }, [content, scheduleSentenceAnalysis])
 
   const handleAccept = useCallback(async () => {
     if (!suggestion || !pendingSentence || isSubmitting.current) return
@@ -103,7 +133,6 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
       content.slice(pendingSentence.end)
 
     setContent(newContent)
-    lastAnalyzedEnd.current = pendingSentence.start + suggestion.suggestion.length
     setSuggestion(null)
     setPendingSentence(null)
 
@@ -189,6 +218,7 @@ export function WritingEditor({ documentId, initialContent, initialCorrections }
         <textarea
           value={content}
           onChange={handleChange}
+          onMouseUp={handleMouseUp}
           className="w-full h-full p-6 text-lg leading-relaxed resize-none border-0 outline-none bg-transparent"
           style={{ fontFamily: 'Georgia, serif', minHeight: 'calc(100vh - 8rem)' }}
           placeholder="Commence à écrire ici… (puedes mezclar español y francés)"
